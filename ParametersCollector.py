@@ -12,12 +12,15 @@ from javax.swing import JButton;
 from javax.swing import JTabbedPane;
 from javax.swing import JTextField;
 from javax.swing import JTable;
-from jsonpath import jsonpath
+from javax.swing import JToggleButton
 from javax.swing.table import AbstractTableModel
 from threading import Lock
 import re
 import os
 import json
+import sys  
+reload(sys)  
+sys.setdefaultencoding('utf8')
 
 
 
@@ -66,19 +69,21 @@ class BurpExtender(IBurpExtender, IHttpListener, IHttpRequestResponse, ITab, IMe
         self._callbacks.setExtensionName('ParasCollector')
         self._log = ArrayList()
         self._lock = Lock()
-        
-
         # 主窗口
         self._splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
 
         logTable = Table(self)
         Pane3=JSplitPane(JSplitPane.VERTICAL_SPLIT)
         Pane4=JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
+        Pane5=JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
+        self.starbutton=JToggleButton("ParametersCoollector is off",actionPerformed=self.startOrStop)
         self.searchinput=JTextField('',120)
-        searchbutton=JButton('Search',actionPerformed=self.search)
+        self.searchbutton=JToggleButton('Not Filter',actionPerformed=self.search)
+        Pane5.add(self.searchbutton)
+        Pane5.add(self.starbutton)
         scrollPane = JScrollPane(logTable)
         Pane4.add(self.searchinput)
-        Pane4.add(searchbutton)
+        Pane4.add(Pane5)
         Pane3.add(Pane4)
         Pane3.add(scrollPane)
         
@@ -98,6 +103,8 @@ class BurpExtender(IBurpExtender, IHttpListener, IHttpRequestResponse, ITab, IMe
         Pane2.add(tabs)
         self._splitpane.setRightComponent(Pane2)
 
+        self.intercept = 0
+
         # 定义 UI 组件
         callbacks.customizeUiComponent(self._splitpane)
         callbacks.customizeUiComponent(logTable)
@@ -115,30 +122,44 @@ class BurpExtender(IBurpExtender, IHttpListener, IHttpRequestResponse, ITab, IMe
 
     def clearList(self,event):
         oldrow = self._log.size()
-        
         # self._lock.acquire()
         with open('/Users/chenguang/PycharmProjects/pythonProject/allparas.json','w') as f:
             f.write('')
         self.fireTableRowsDeleted(0, oldrow-1)
         self._log.clear()
-        
         # self._lock.release()
+    def startOrStop(self, event):
+        if self.starbutton.getText() == "ParametersCoollector is off":
+            self.starbutton.setText("ParametersCoollector is on")
+            self.starbutton.setSelected(True)
+            self.intercept = 1
+        else:
+            self.starbutton.setText("ParametersCoollector is off")
+            self.starbutton.setSelected(False)
+            self.intercept = 0
+
     def search(self,event):
-        try:
-            with open('allparas.json','r') as f:
-                data=f.read()
-            input=self.searchinput.text
-            oldrow = self._log.size()
-            jsondata=json.loads(data)
-            for i in range(0,oldrow):
-                host=self.getValueAt(i,0)
-                if input not in self.getValueAt(i,0):
-                    jsondata.pop(host)
-                    with open("allparas.json","w+") as j:
-                        json.dump(jsondata, j, ensure_ascii=False)
-            self.fireTableDataChanged
-        except:
-            self.fireTableDataChanged
+        if self.searchbutton.getText() == "Not Filter":
+            self.searchbutton.setText("Filter")
+            self.searchbutton.setSelected(True)
+            try:
+                with open('allparas.json','r') as f:
+                    data=f.read()
+                input=self.searchinput.text
+                oldrow = self._log.size()
+                jsondata=json.loads(data)
+                for i in range(0,oldrow):
+                    host=self.getValueAt(i,0)
+                    if input not in self.getValueAt(i,0):
+                        jsondata.pop(host)
+                        with open("allparas.json","w+") as j:
+                            json.dump(jsondata, j, ensure_ascii=False)
+                self.fireTableDataChanged()
+            except:
+                self.fireTableDataChanged()
+        else:
+            self.searchbutton.setText("Not Filter")
+            self.searchbutton.setSelected(False)
 
     def getTabCaption(self):
         return "ParasCollector"
@@ -148,88 +169,88 @@ class BurpExtender(IBurpExtender, IHttpListener, IHttpRequestResponse, ITab, IMe
         
 
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
-        
-        if toolFlag == 4:
-            # 读 json 文件取得数据
-            self._lock.acquire() # 加锁，反应会慢一点
-            try:
-                with open("allparas.json","r") as f:
-                    allparas = json.loads(f.read())
-            except Exception as ex:
-                allparas = {}
+        if self.intercept == 1:
+            if toolFlag == 4:
+                # 读 json 文件取得数据
+                self._lock.acquire() # 加锁，反应会慢一点
+                try:
+                    with open("allparas.json","r") as f:
+                        allparas = json.loads(f.read())
+                except Exception as ex:
+                    allparas = {}
 
-            host = messageInfo.getHttpService().getHost().encode('utf-8')
-            
-                
-                
-            paras = allparas.get(host)
-            if paras == None:
-                paras = []
-            # print(type(paras))
-            if messageIsRequest: # 如果是一个请求
+                host = messageInfo.getHttpService().getHost().encode('utf-8')
                 
                     
-                    request = messageInfo.getRequest() # 获得请求信息
                     
-                    analyzedRequest = self._helpers.analyzeRequest(request)
-                    paras1 = analyzedRequest.getParameters()
-                    Request_hreaders=analyzedRequest.getHeaders()
-                    request_bodys = request[analyzedRequest.getBodyOffset():].tostring()
-                    if '":' in request_bodys:
-                        try:
+                paras = allparas.get(host)
+                if paras == None:
+                    paras = []
+                # print(type(paras))
+                if messageIsRequest: # 如果是一个请求
+                    
+                        
+                        request = messageInfo.getRequest() # 获得请求信息
+                        
+                        analyzedRequest = self._helpers.analyzeRequest(request)
+                        paras1 = analyzedRequest.getParameters()
+                        Request_hreaders=analyzedRequest.getHeaders()
+                        request_bodys = request[analyzedRequest.getBodyOffset():].tostring()
+                        if '":' in request_bodys:
+                            try:
+                                    jsonbody=json.loads(body)
+                            except Exception:
+                                jsonbody=''
+                            if type(jsonbody)==dict:
+                                Parameters=getJsonKey(jsonbody)
+                                for para in Parameters:
+                                    if para not in paras: # 去重
+                                        paras.append(str(para))
+                        
+                        # Request_hreaders1=''.join(str(i) for i in Request_hreaders)
+                        # print(Request_hreaders[0])
+                        if '?' in Request_hreaders[0] or '=' in request_bodys:
+                            for para in paras1:
+                                temp = str(para.getName())
+                                if temp not in paras and (temp in Request_hreaders[0] or temp in request_bodys): # 去重、去cookie参数
+                                        paras.append(temp)
+                        if paras !=[]:
+                            paras.sort()
+                            allparas[host] = paras
+                        
+                if not messageIsRequest: # 如果是个响应
+                    
+                        response = messageInfo.getResponse() # 获得响应信息
+                        analyzedResponse = self._helpers.analyzeResponse(response)
+                        resquest = messageInfo.getRequest()
+                        analyzedRequest = self._helpers.analyzeResponse(resquest)
+                        # request_header = analyzedRequest.getHeaders()
+                        
+                        if analyzedResponse.getInferredMimeType() == "JSON":
+                            body = response[analyzedResponse.getBodyOffset():].tostring() # 获取返回包
+                            try:
                                 jsonbody=json.loads(body)
-                        except Exception:
-                            jsonbody=''
-                        if type(jsonbody)==dict:
-                            Parameters=getJsonKey(jsonbody)
-                            for para in Parameters:
-                                if para not in paras: # 去重
-                                    paras.append(str(para))
-                    
-                    # Request_hreaders1=''.join(str(i) for i in Request_hreaders)
-                    # print(Request_hreaders[0])
-                    if '?' in Request_hreaders[0] or '=' in request_bodys:
-                        for para in paras1:
-                            temp = str(para.getName())
-                            if temp not in paras and (temp in Request_hreaders[0] or temp in request_bodys): # 去重、去cookie参数
-                                    paras.append(temp)
-                    if paras !=[]:
-                        paras.sort()
-                        allparas[host] = paras
-                    
-            if not messageIsRequest: # 如果是个响应
+                            except Exception:
+                                jsonbody=''
+                            if type(jsonbody)==dict:
+                                
+                                Parameters=getJsonKey(jsonbody)
+                                for para in Parameters:
+                                    if para not in paras: # 去重
+                                        paras.append(str(para))
+                        if paras !=[]:
+                            paras.sort()
+                            allparas[host] = paras
+                if allparas != {} and self.searchinput.text in host:
+                    with open("allparas.json","w+") as f:
+                        json.dump(allparas, f, ensure_ascii=False)
                 
-                    response = messageInfo.getResponse() # 获得响应信息
-                    analyzedResponse = self._helpers.analyzeResponse(response)
-                    resquest = messageInfo.getRequest()
-                    analyzedRequest = self._helpers.analyzeResponse(resquest)
-                    # request_header = analyzedRequest.getHeaders()
-                    
-                    if analyzedResponse.getInferredMimeType() == "JSON":
-                        body = response[analyzedResponse.getBodyOffset():].tostring() # 获取返回包
-                        try:
-                            jsonbody=json.loads(body)
-                        except Exception:
-                            jsonbody=''
-                        if type(jsonbody)==dict:
-                            
-                            Parameters=getJsonKey(jsonbody)
-                            for para in Parameters:
-                                if para not in paras: # 去重
-                                    paras.append(str(para))
-                    if paras !=[]:
-                        paras.sort()
-                        allparas[host] = paras
-            if allparas != {} and self.searchinput.text in host:
-                with open("allparas.json","w+") as f:
-                    json.dump(allparas, f, ensure_ascii=False)
-            
-            row = self._log.size()
-            self._log.clear()
-            for host in allparas.keys():
-                self._log.add(LogEntry(host, '\n'.join(allparas.get(host))))
-                self.fireTableRowsInserted(row, row)
-            self._lock.release()
+                row = self._log.size()
+                self._log.clear()
+                for host in allparas.keys():
+                    self._log.add(LogEntry(host, '\n'.join(allparas.get(host))))
+                    self.fireTableRowsInserted(row, row)
+                self._lock.release()
 
     def getRowCount(self):
         try:
