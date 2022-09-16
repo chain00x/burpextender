@@ -6,6 +6,6 @@ Burp参数收集插件
 
 点击需要查看的host刷新
 
-search之后有新的请求进来就开始过滤了
+filter开启之后有新的请求进来就开始过滤了
 
 参考代码：https://www.cnblogs.com/wjrblogs/p/13764361.html
